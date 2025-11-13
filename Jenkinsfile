@@ -19,7 +19,6 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                // ✅ VOTRE PROPRE REPO AVEC LA BONNE CONFIG H2
                 git branch: 'patch-1', url: 'https://github.com/MonomNakhli/spring-boot-jpa-docker-jenkins-pipeline.git'
             }
         }

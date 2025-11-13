@@ -41,35 +41,10 @@ pipeline {
             }
         }
 
-        stage('Docker Security Scan') {
-            steps {
-                sh '''
-                    echo "🔒 Docker Security Scan (Simulation)"
-                    echo "✅ En production: trivy image springboot-app:latest"
-                    echo "✅ En production: docker scout quickview springboot-app:latest"
-                '''
-            }
-        }
-
         stage('Gitleaks Scan') {
             steps {
                 sh '''
                     docker run --rm -v $WORKSPACE:/src zricethezav/gitleaks:latest detect --source /src --exit-code 0
-                '''
-            }
-        }
-
-        stage('Deploy') {
-            steps {
-                sh '''
-                    # Arrête l'instance précédente si elle existe
-                    pkill -f "demo-0.0.1-SNAPSHOT.jar" || true
-                    # Démarre sur le port 8081 pour éviter conflit avec Jenkins
-                    nohup java -jar target/demo-0.0.1-SNAPSHOT.jar --server.port=8081 > app.log 2>&1 &
-                    sleep 10
-                    echo "🚀 Application Spring Boot déployée avec succès"
-                    echo "🌐 Disponible sur: http://192.168.33.10:8081"
-                    echo "📱 Testez: http://192.168.33.10:8081/hello"
                 '''
             }
         }
@@ -80,7 +55,6 @@ pipeline {
                     sh '''
                         mkdir -p zap-reports
                         chmod 777 zap-reports
-                        # Scan de VOTRE app déployée sur le port 8081
                         docker run --rm -t \
                         -v $(pwd)/zap-reports:/zap/wrk \
                         ghcr.io/zaproxy/zaproxy:stable \
@@ -90,25 +64,37 @@ pipeline {
                 }
             }
         }
+
+        stage('Deploy') {
+            steps {
+                sh '''
+                    pkill -f "demo-0.0.1-SNAPSHOT.jar" || true
+                    nohup java -jar target/demo-0.0.1-SNAPSHOT.jar --server.port=8081 > app.log 2>&1 &
+                    sleep 10
+                    echo "Application Spring Boot demarree"
+                    echo "Disponible sur: http://192.168.33.10:8081"
+                '''
+            }
+        }
     }
 
     post {
         always {
             archiveArtifacts artifacts: '**/zap-reports/*.html, **/target/dependency-check-report.html, app.log', fingerprint: true
-            echo '🔚 Pipeline DevSecOps terminé !'
+            echo 'Pipeline DevSecOps termine'
         }
         success {
             emailext(
                 to: "mnakhli560@gmail.com",
-                subject: "✅ Pipeline DevSecOps réussi : ${currentBuild.fullDisplayName}",
-                body: "La pipeline DevSecOps a réussi! Application disponible sur: http://192.168.33.10:8081"
+                subject: "Pipeline DevSecOps reussi : ${currentBuild.fullDisplayName}",
+                body: "La pipeline DevSecOps a reussi. Consultez les logs: ${env.BUILD_URL}"
             )
         }
         failure {
             emailext(
                 to: "mnakhli560@gmail.com",
-                subject: "❌ Pipeline DevSecOps échoué : ${currentBuild.fullDisplayName}",
-                body: "Le pipeline a échoué. Consultez les logs: ${env.BUILD_URL}"
+                subject: "Pipeline DevSecOps echoue : ${currentBuild.fullDisplayName}",
+                body: "Le pipeline a echoue. Consultez les logs: ${env.BUILD_URL}"
             )
         }
     }

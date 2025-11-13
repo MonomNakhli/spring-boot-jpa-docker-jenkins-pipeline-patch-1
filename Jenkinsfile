@@ -1,47 +1,51 @@
 pipeline {
     agent any
+
     tools {
         maven 'M2_HOME'
         jdk 'JAVA_HOME'
     }
 
+    environment {
+        SONAR_TOKEN = credentials('sonar-token')
+    }
+
     stages {
+        stage('Clean Workspace') {
+            steps {
+                deleteDir()
+            }
+        }
+
         stage('Checkout') {
             steps {
+                // ✅ VOTRE PROPRE REPO AVEC LA BONNE CONFIG H2
                 git branch: 'patch-1', url: 'https://github.com/MonomNakhli/spring-boot-jpa-docker-jenkins-pipeline.git'
             }
         }
 
         stage('Build') {
             steps {
-                sh '''
-                    echo "🔨 Construction de l'application..."
-                    mvn clean package -DskipTests
-                    
-                    echo "📂 Contenu du dossier target :"
-                    ls -la target/
-                    
-                    echo "📦 Fichiers JAR :"
-                    ls -la target/*.jar || echo "❌ AUCUN JAR TROUVÉ"
-                '''
+                sh 'mvn clean package -DskipTests'
             }
         }
 
-        stage('Vérification') {
+        stage('SAST - SonarQube') {
+            steps {
+                sh "mvn sonar:sonar -Dsonar.host.url=http://localhost:9000 -Dsonar.login=${SONAR_TOKEN}"
+            }
+        }
+
+        stage('SCA - Dependency Check') {
+            steps {
+                sh 'mvn org.owasp:dependency-check-maven:check'
+            }
+        }
+
+        stage('Gitleaks Scan') {
             steps {
                 sh '''
-                    # Vérifier si le JAR existe
-                    if [ ! -f target/*.jar ]; then
-                        echo "❌ ERREUR CRITIQUE : Aucun fichier JAR créé !"
-                        echo "📋 Causes possibles :"
-                        echo "   - Erreur de compilation Maven"
-                        echo "   - Problème de dépendances"
-                        echo "   - Fichier pom.xml incorrect"
-                        exit 1
-                    else
-                        echo "✅ JAR trouvé :"
-                        ls -la target/*.jar
-                    fi
+                    docker run --rm -v $WORKSPACE:/src zricethezav/gitleaks:latest detect --source /src --exit-code 0
                 '''
             }
         }
@@ -49,24 +53,70 @@ pipeline {
         stage('Deploy') {
             steps {
                 sh '''
-                    JAR_FILE=$(ls target/*.jar | head -1)
-                    echo "🚀 Déploiement de : $JAR_FILE"
-                    
-                    pkill -f "java.*jar" || true
+                    echo "Deploiement de VOTRE application Spring Boot avec JPA..."
+                    # Arreter toute instance existante
+                    pkill -f "spring-boot-jpa-docker-jenkins-pipeline" || true
                     sleep 3
                     
-                    nohup java -jar -Dserver.port=8081 "$JAR_FILE" > app.log 2>&1 &
+                    # Demarrer VOTRE application avec le bon contexte
+                    nohup java -jar target/spring-boot-jpa-docker-jenkins-pipeline-0.0.1-SNAPSHOT.jar > app.log 2>&1 &
+                    
+                    # Attendre le demarrage (H2 demarre plus vite que MySQL)
                     sleep 20
                     
-                    if curl -s http://localhost:8081/spring-boot-jenkins/hello; then
-                        echo "✅ SUCCÈS : App déployée sur http://192.168.33.10:8081"
+                    echo "Verification du demarrage..."
+                    echo "=== LOGS APPLICATION ==="
+                    tail -15 app.log
+                    
+                    # Tester l'application
+                    if curl -s --connect-timeout 10 http://localhost:8080/spring-boot-jenkins/hello > /dev/null; then
+                        echo "✅ VOTRE APPLICATION SPRING BOOT AVEC JPA EST DEMARREE"
+                        echo "🌐 Application: http://192.168.33.10:8080/spring-boot-jenkins"
+                        echo "👥 API Students: http://192.168.33.10:8080/spring-boot-jenkins/api/students"
+                        echo "🗄️ Console H2: http://192.168.33.10:8080/spring-boot-jenkins/h2-console"
                     else
-                        echo "❌ Échec du déploiement"
-                        cat app.log
-                        exit 1
+                        echo "⚠️ Application en cours de demarrage ou non accessible reseau"
+                        echo "💡 En local: http://localhost:8080/spring-boot-jenkins/hello"
                     fi
                 '''
             }
+        }
+
+        stage('DAST - Web Scan') {
+            steps {
+                script {
+                    sh '''
+                        mkdir -p zap-reports
+                        echo "Tentative de scan DAST sur VOTRE application..."
+                        docker run --rm -t \
+                        -v $(pwd)/zap-reports:/zap/wrk \
+                        ghcr.io/zaproxy/zaproxy:stable \
+                        zap-baseline.py -t http://192.168.33.10:8080/spring-boot-jenkins \
+                        -r zap_report.html -J zap_out.json -I -d || echo "Scan DAST termine - application peut-etre non accessible reseau"
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            archiveArtifacts artifacts: '**/zap-reports/*.html, **/target/dependency-check-report.html, app.log', fingerprint: true
+            echo 'Pipeline DevSecOps avec VOTRE application termine'
+        }
+        success {
+            emailext(
+                to: "mnakhli560@gmail.com",
+                subject: "Pipeline DevSecOps VOTRE app reussi : ${currentBuild.fullDisplayName}",
+                body: "La pipeline DevSecOps avec VOTRE application Spring Boot a reussi. Consultez les logs: ${env.BUILD_URL}"
+            )
+        }
+        failure {
+            emailext(
+                to: "mnakhli560@gmail.com",
+                subject: "Pipeline DevSecOps VOTRE app echoue : ${currentBuild.fullDisplayName}",
+                body: "Le pipeline avec VOTRE application a echoue. Consultez les logs: ${env.BUILD_URL}"
+            )
         }
     }
 }

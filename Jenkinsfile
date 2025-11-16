@@ -52,30 +52,27 @@ pipeline {
         stage('Deploy') {
             steps {
                 sh '''
-                    echo "Deploiement de VOTRE application Spring Boot avec JPA..."
+                    echo "Deploiement de l'application Spring Boot avec JPA..."
                     # Arreter toute instance existante
                     pkill -f "spring-boot-jpa-docker-jenkins-pipeline" || true
                     sleep 3
                     
-                    # Demarrer VOTRE application avec le bon contexte
+                    # Demarrer l'application avec le bon contexte
                     nohup java -jar target/spring-boot-jpa-docker-jenkins-pipeline-0.0.1-SNAPSHOT.jar > app.log 2>&1 &
                     
-                    # Attendre le demarrage (H2 demarre plus vite que MySQL)
-                    sleep 20
+                    # Attendre le demarrage
+                    sleep 30
                     
                     echo "Verification du demarrage..."
                     echo "=== LOGS APPLICATION ==="
                     tail -15 app.log
                     
-                    # Tester l'application
-                    if curl -s --connect-timeout 10 http://localhost:8080/spring-boot-jenkins/hello > /dev/null; then
-                        echo "✅ VOTRE APPLICATION SPRING BOOT AVEC JPA EST DEMARREE"
-                        echo "🌐 Application: http://192.168.33.10:8080/spring-boot-jenkins"
-                        echo "👥 API Students: http://192.168.33.10:8080/spring-boot-jenkins/api/students"
-                        echo "🗄️ Console H2: http://192.168.33.10:8080/spring-boot-jenkins/h2-console"
+                    # Tester l'application sur l'IP réseau pour ZAP
+                    if curl -s --connect-timeout 15 http://192.168.33.10:8080/spring-boot-jenkins/hello > /dev/null; then
+                        echo "✅ APPLICATION DEMARREE ET ACCESSIBLE SUR LE RESEAU"
+                        echo "🌐 URL pour ZAP: http://192.168.33.10:8080/spring-boot-jenkins"
                     else
-                        echo "⚠️ Application en cours de demarrage ou non accessible reseau"
-                        echo "💡 En local: http://localhost:8080/spring-boot-jenkins/hello"
+                        echo "❌ Application non accessible sur l'IP réseau"
                     fi
                 '''
             }
@@ -85,13 +82,27 @@ pipeline {
             steps {
                 script {
                     sh '''
-                        mkdir -p zap-reports
-                        echo "Tentative de scan DAST sur VOTRE application..."
-                        docker run --rm -t \
-                        -v $(pwd)/zap-reports:/zap/wrk \
-                        ghcr.io/zaproxy/zaproxy:stable \
-                        zap-baseline.py -t http://192.168.33.10:8080/spring-boot-jenkins \
-                        -r zap_report.html -J zap_out.json -I -d || echo "Scan DAST termine - application peut-etre non accessible reseau"
+                        echo "Création du dossier pour les rapports ZAP..."
+                        mkdir -p $WORKSPACE/zap-reports
+                        
+                        echo "Lancement du scan DAST ZAP..."
+                        
+                        # Scan ZAP avec volume monté sur le workspace
+                        docker run --rm \
+                            -v $WORKSPACE/zap-reports:/zap/wrk:rw \
+                            ghcr.io/zaproxy/zaproxy:stable \
+                            zap-baseline.py \
+                            -t http://192.168.33.10:8080/spring-boot-jenkins \
+                            -r /zap/wrk/zap_report.html \
+                            -J /zap/wrk/zap_report.json \
+                            -x /zap/wrk/zap_report.xml \
+                            -a -I -d -T 60
+                        
+                        echo "=== VERIFICATION DES RAPPORTS ZAP DANS WORKSPACE ==="
+                        echo "Chemin des rapports: $WORKSPACE/zap-reports/"
+                        ls -la $WORKSPACE/zap-reports/
+                        echo "=== CONTENU DU WORKSPACE ==="
+                        find $WORKSPACE -name "*.html" -o -name "*.json" -o -name "*.xml" | grep -v node_modules
                     '''
                 }
             }
@@ -100,21 +111,26 @@ pipeline {
 
     post {
         always {
-            archiveArtifacts artifacts: '**/zap-reports/*.html, **/target/dependency-check-report.html, app.log', fingerprint: true
-            echo 'Pipeline DevSecOps avec VOTRE application termine'
+            echo "Pipeline DevSecOps terminé"
+            echo "=== EMPLACEMENT DES RAPPORTS ==="
+            sh '''
+                echo "Rapports ZAP: $WORKSPACE/zap-reports/"
+                echo "Rapport Dependency Check: $WORKSPACE/target/dependency-check-report.html"
+                echo "Logs application: $WORKSPACE/app.log"
+            '''
         }
         success {
             emailext(
                 to: "mnakhli560@gmail.com",
-                subject: "Pipeline DevSecOps VOTRE app reussi : ${currentBuild.fullDisplayName}",
-                body: "La pipeline DevSecOps avec VOTRE application Spring Boot a reussi. Consultez les logs: ${env.BUILD_URL}"
+                subject: "Pipeline DevSecOps réussi : ${currentBuild.fullDisplayName}",
+                body: "Le pipeline DevSecOps a été exécuté avec succès. Les rapports sont dans le workspace Jenkins."
             )
         }
         failure {
             emailext(
                 to: "mnakhli560@gmail.com",
-                subject: "Pipeline DevSecOps VOTRE app echoue : ${currentBuild.fullDisplayName}",
-                body: "Le pipeline avec VOTRE application a echoue. Consultez les logs: ${env.BUILD_URL}"
+                subject: "Pipeline DevSecOps échoué : ${currentBuild.fullDisplayName}",
+                body: "Le pipeline a échoué. Consultez les logs: ${env.BUILD_URL}"
             )
         }
     }

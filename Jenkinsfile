@@ -19,7 +19,7 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                git branch: 'main', url: 'https://github.com/oktadev/spring-boot-docker-example
+                git branch: 'main', url: 'https://github.com/oktadev/spring-boot-docker-example'
         }
 
         stage('Build') {

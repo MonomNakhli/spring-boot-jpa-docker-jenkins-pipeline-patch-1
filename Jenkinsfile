@@ -19,8 +19,7 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                git branch: 'main', url: 'https://github.com/MonomNakhli/spring-boot-jpa-docker-jenkins-pipeline.git'
-            }
+                git branch: 'main', url: 'https://github.com/oktadev/spring-boot-docker-example
         }
 
         stage('Build') {

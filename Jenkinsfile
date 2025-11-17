@@ -19,7 +19,7 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                git branch: 'main', url: 'https://github.com/oktadev/spring-boot-docker-example'
+                git branch: 'main', url: 'https://github.com/MonomNakhli/spring-boot-jpa-docker-jenkins-pipeline.git'
             }
         }
 
@@ -80,29 +80,31 @@ pipeline {
 
         stage('DAST - Web Scan') {
             steps {
-                sh '''
-                    echo "Création du dossier pour les rapports ZAP..."
-                    mkdir -p $WORKSPACE/zap-reports
-                    
-                    echo "Lancement du scan DAST ZAP..."
-                    
-                    # Scan ZAP avec volume monté sur le workspace
-                    docker run --rm \
-                        -v $WORKSPACE/zap-reports:/zap/wrk:rw \
-                        ghcr.io/zaproxy/zaproxy:stable \
-                        zap-baseline.py \
-                        -t http://192.168.33.10:8080/spring-boot-jenkins \
-                        -r /zap/wrk/zap_report.html \
-                        -J /zap/wrk/zap_report.json \
-                        -x /zap/wrk/zap_report.xml \
-                        -a -I -d -T 60
-                    
-                    echo "=== VERIFICATION DES RAPPORTS ZAP DANS WORKSPACE ==="
-                    echo "Chemin des rapports: $WORKSPACE/zap-reports/"
-                    ls -la $WORKSPACE/zap-reports/
-                    echo "=== CONTENU DU WORKSPACE ==="
-                    find $WORKSPACE -name "*.html" -o -name "*.json" -o -name "*.xml" | grep -v node_modules
-                '''
+                script {
+                    sh '''
+                        echo "Création du dossier pour les rapports ZAP..."
+                        mkdir -p $WORKSPACE/zap-reports
+                        
+                        echo "Lancement du scan DAST ZAP..."
+                        
+                        # Scan ZAP avec volume monté sur le workspace
+                        docker run --rm \
+                            -v $WORKSPACE/zap-reports:/zap/wrk:rw \
+                            ghcr.io/zaproxy/zaproxy:stable \
+                            zap-baseline.py \
+                            -t http://192.168.33.10:8080/spring-boot-jenkins \
+                            -r /zap/wrk/zap_report.html \
+                            -J /zap/wrk/zap_report.json \
+                            -x /zap/wrk/zap_report.xml \
+                            -a -I -d -T 60
+                        
+                        echo "=== VERIFICATION DES RAPPORTS ZAP DANS WORKSPACE ==="
+                        echo "Chemin des rapports: $WORKSPACE/zap-reports/"
+                        ls -la $WORKSPACE/zap-reports/
+                        echo "=== CONTENU DU WORKSPACE ==="
+                        find $WORKSPACE -name "*.html" -o -name "*.json" -o -name "*.xml" | grep -v node_modules
+                    '''
+                }
             }
         }
     }
